@@ -161,7 +161,7 @@ If that doesn't work, press `Ctrl + Alt + Shift + Q` to force-quit the stream.
 ## 🔴 Right-Click Drag Not Working in Games
 
 ### Symptom
-In games like Timberborn where you right-click-drag to move the camera, the first drag works but subsequent drags fail.
+In games like Timberborn, Cities Skyline, AOE where you right-click-drag to move the camera, the first drag works but subsequent drags fail.
 
 ### Cause
 Wayland handles mouse pointer locks aggressively in fullscreen mode, which conflicts with how Moonlight sends relative mouse data.
@@ -171,7 +171,7 @@ Wayland handles mouse pointer locks aggressively in fullscreen mode, which confl
 **1. Toggle mouse mode in Moonlight:**
 Press `Ctrl + Alt + Shift + M` while in the stream to switch between desktop and game mouse mode.
 
-**2. Switch the game to Windowed mode:**
+**2. Switch the game to Windowed mode: (Recommended)**
 Change the game's display setting from Fullscreen to Windowed. This avoids the Wayland pointer lock issue entirely.
 
 **3. Fake borderless fullscreen via window rules (Hyprland):**

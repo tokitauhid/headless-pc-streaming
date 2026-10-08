@@ -11,7 +11,7 @@ Optimal settings for streaming from your headless PC.
 | Resolution | Match your monitor (e.g., 2560x1440) | Must match the headless monitor resolution on the PC |
 | FPS | 120 | Match the headless monitor refresh rate |
 | Video Bitrate | 50-80 Mbps | Gigabit LAN can handle up to ~150 Mbps easily |
-| Video Codec | HEVC (H.265) | RX 5700 XT supports HEVC but NOT AV1 |
+| Video Codec | AV1 (Recommended)/HEVC (H.265) | RX 5700 XT supports HEVC but NOT AV1 |
 | HDR | Off | Unless your monitor and GPU both support it |
 | Audio | Stereo | Sunshine creates a virtual audio sink automatically |
 

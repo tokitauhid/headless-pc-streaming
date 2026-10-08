@@ -379,7 +379,7 @@ systemd-inhibit --what=idle --who=sunshine --why="Game streaming" --mode=block s
 4. **Start Sunshine:** Systemd user service or autostart desktop entry
 5. **WoL:** Same NetworkManager command
 
-### Hyprland (Any Distro)
+### Hyprland
 
 1. **Install Sunshine:** Via package manager
 2. **Auto-login:** Edit your display manager config (SDDM, GDM, etc.)
