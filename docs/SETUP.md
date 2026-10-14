@@ -367,7 +367,7 @@ systemd-inhibit --what=idle --who=sunshine --why="Game streaming" --mode=block s
 1. **Install Sunshine:** `sudo dnf install sunshine` or Flatpak
 2. **Auto-login:** Edit `/etc/sddm.conf` → `User=YOUR_USER`, `Session=plasma`
 3. **Virtual monitor:** Plug in a dummy HDMI dongle (simplest), or use `kscreen-doctor`
-4. **Start Sunshine:** `systemctl --user enable --now sunshine`
+4. **Start Sunshine:** `systemctl --user start app-dev.lizardbyte.app.Sunshine.service`
 5. **WoL:** `nmcli connection modify "Wired connection 1" 802-3-ethernet.wake-on-lan magic`
 6. **Done!**
 
