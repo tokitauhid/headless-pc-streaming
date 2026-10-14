@@ -1,267 +1,166 @@
 # Complete Headless PC Streaming Setup Guide
 
-This guide documents every step needed to turn a desktop PC into a headless streaming machine accessible from a laptop via Moonlight. It is written to be **distro-agnostic** with specific sections for different desktop environments.
+This guide documents every step needed to turn a desktop PC into a headless streaming machine accessible from a laptop via **Moonlight** and **Sunshine**. No physical monitor needs to be attached to the host PC.
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites](#1-prerequisites)
-2. [Install Sunshine](#2-install-sunshine)
-3. [Enable Auto-Login](#3-enable-auto-login)
-4. [Create the Virtual Headless Monitor](#4-create-the-virtual-headless-monitor)
-5. [Configure Sunshine (Display Target & Autostart)](#5-configure-sunshine-display-target--autostart)
-6. [Fix Headless Cursor Lag](#6-fix-headless-cursor-lag)
-7. [Wake-on-LAN Setup](#7-wake-on-lan-setup)
-8. [Moonlight Client Setup](#8-moonlight-client-setup)
-9. [Disable Idle/Suspend While Streaming](#9-disable-idlesuspend-while-streaming)
-10. [Desktop-Specific Instructions](#10-desktop-specific-instructions)
+- [1. Prerequisites](#1-prerequisites)
+- [2. Track A: Fedora + KDE Plasma (Wayland)](#2-track-a-fedora--kde-plasma-wayland)
+  - [Step 1: Install Sunshine](#step-1-install-sunshine-fedora)
+  - [Step 2: Enable SDDM Auto-Login (Mandatory for Headless)](#step-2-enable-sddm-auto-login-mandatory-for-headless)
+  - [Step 3: Setup the Virtual Display](#step-3-setup-the-virtual-display-kde)
+  - [Step 4: Configure Sunshine to Capture the Virtual Display](#step-4-configure-sunshine-to-capture-the-virtual-display)
+  - [Step 5: Enable Sunshine Autostart](#step-5-enable-sunshine-autostart)
+- [3. Track B: Arch / CachyOS + Hyprland (Wayland)](#3-track-b-arch--cachyos--hyprland-wayland)
+  - [Step 1: Install Sunshine](#step-1-install-sunshine-arch)
+  - [Step 2: Enable Auto-Login](#step-2-enable-auto-login-hyprland)
+  - [Step 3: Create Headless Monitor in Hyprland](#step-3-create-headless-monitor-in-hyprland)
+  - [Step 4: Fix Headless Cursor Lag](#step-4-fix-headless-cursor-lag)
+  - [Step 5: Configure Sunshine & Autostart](#step-5-configure-sunshine--autostart-hyprland)
+  - [Step 6: Status Bar Configuration](#step-6-status-bar-configuration)
+- [4. Shared Configuration](#4-shared-configuration)
+  - [Wake-on-LAN Setup](#wake-on-lan-setup)
+  - [Moonlight Client Setup](#moonlight-client-setup)
+  - [Prevent Idle / Suspend While Streaming](#prevent-idle--suspend-while-streaming)
 
 ---
 
 ## 1. Prerequisites
 
-### On the Desktop PC (the host you stream FROM):
-- Linux with a Wayland or X11 desktop environment
-- A GPU with hardware video encoding (AMD VAAPI, NVIDIA NVENC, or Intel QSV)
-- Gigabit Ethernet (highly recommended for low latency)
-- No physical monitor needs to be plugged in
+### On the Host Desktop PC:
+- Linux with AMD, NVIDIA, or Intel GPU capable of hardware video encoding (VA-API, NVENC, or QSV).
+- Wired Gigabit Ethernet connection (strongly recommended for sub-5ms network latency).
+- Display Environment: Either **Fedora KDE Plasma (Wayland)** or **Arch/CachyOS Hyprland**.
 
-### On the Laptop (the client you stream TO):
-- Moonlight client installed ([moonlight-stream.org](https://moonlight-stream.org))
-- Connected to the same local network as the PC
+### On the Client Laptop / Device:
+- **Moonlight** installed ([moonlight-stream.org](https://moonlight-stream.org)).
+- Connected to the same local area network (LAN) as the desktop PC.
 
 ---
 
-## 2. Install Sunshine
+## 2. Track A: Fedora + KDE Plasma (Wayland)
 
-Sunshine is the self-hosted game streaming server that Moonlight connects to.
-
-### Fedora
+### Step 1: Install Sunshine (Fedora)
+Sunshine is available via RPM package or Flatpak:
 ```bash
-# Sunshine is available via COPR or Flatpak
 sudo dnf install -y sunshine
-# OR
-flatpak install flathub dev.lizardbyte.app.Sunshine
+# Or via Flatpak:
+# flatpak install flathub dev.lizardbyte.app.Sunshine
 ```
 
-### Arch / CachyOS
-```bash
-sudo pacman -S sunshine
-```
-
-### Ubuntu / Debian
-```bash
-# Download the .deb from https://github.com/LizardByte/Sunshine/releases
-sudo dpkg -i sunshine-*.deb
-sudo apt-get install -f
-```
-
-### First-Time Pairing
-1. Start Sunshine: `sunshine`
-2. Open `https://localhost:47990` in a browser on the PC
-3. Set a username and password for the web UI
-4. On your laptop, open Moonlight and add the PC's IP address
-5. Moonlight will show a PIN — enter it in the Sunshine web UI to pair
+Pair your Moonlight client with Sunshine initially:
+1. Start Sunshine once: `sunshine`
+2. Open the web interface in a browser: `https://localhost:47990`
+3. Set your admin username and password.
+4. On your laptop, open Moonlight, enter your PC's IP, and input the generated PIN in Sunshine's web UI (**PIN** tab).
 
 ---
 
-## 3. Enable Auto-Login
+### Step 2: Enable SDDM Auto-Login (Mandatory for Headless)
 
-**Why:** Sunshine runs as a **user service**. It only starts after you log in. Without a monitor and keyboard attached, you cannot type your password at the login screen. Auto-login bypasses this.
+> [!CRITICAL]
+> Sunshine runs as a **user service**. It only launches **after** your graphical desktop session starts.
+> If auto-login is disabled, the PC sits at the SDDM login screen after boot. Sunshine will find no display, throw `Fatal: Unable to find display or encoder during startup`, and refuse Moonlight connections.
 
-### SDDM (KDE Plasma, Hyprland, LXQt)
-Edit `/etc/sddm.conf` (create it if it doesn't exist):
-```ini
+Create an SDDM autologin configuration drop-in:
+```bash
+sudo mkdir -p /etc/sddm.conf.d
+sudo bash -c 'cat > /etc/sddm.conf.d/autologin.conf << EOF
 [Autologin]
-User=YOUR_USERNAME
-Session=plasma        # or "hyprland" or your DE's session name
+User=$(whoami)
+Session=plasma
+EOF'
 ```
-
-To find your session name:
-```bash
-ls /usr/share/wayland-sessions/    # Wayland sessions
-ls /usr/share/xsessions/           # X11 sessions
-```
-
-### GDM (GNOME)
-```bash
-sudo nano /etc/gdm/custom.conf
-```
-```ini
-[daemon]
-AutomaticLoginEnable=True
-AutomaticLogin=YOUR_USERNAME
-```
-
-### LightDM (XFCE, Cinnamon, MATE)
-```bash
-sudo nano /etc/lightdm/lightdm.conf
-```
-```ini
-[Seat:*]
-autologin-user=YOUR_USERNAME
-autologin-session=xfce    # or your session name
-```
-
-> [!CAUTION]
-> Auto-login means anyone with physical access to the PC can access your desktop. Since this PC will be headless, the risk is minimal, but be aware of this if the machine is in a shared environment.
+*(Verify your session file exists at `/usr/share/wayland-sessions/plasma.desktop`)*.
 
 ---
 
-## 4. Create the Virtual Headless Monitor
+### Step 3: Setup the Virtual Display (KDE)
 
-**Why:** When no physical monitor is plugged in, the desktop environment has no screen to render to. Sunshine needs a screen to capture. We create a software "virtual" screen.
-
-### Hyprland (Wayland)
-
-Hyprland requires you to explicitly create a headless output. Add this to your startup config:
-
-**Startup (create the virtual output):**
-```
-exec-once = hyprctl output create headless
-```
-Or in Lua config (Hyprland ≥ 0.55):
-```lua
-hl.on("hyprland.start", function()
-    hl.exec_cmd("hyprctl output create headless")
-end)
-```
-
-**Monitor config (give it a resolution):**
-```
-monitor=HEADLESS-1,2560x1440@120.0,0x0,1.0
-```
-Or in Lua:
-```lua
-hl.monitor({
-    output = "HEADLESS-1",
-    mode = "2560x1440@120.0",
-    position = "0x0",
-    scale = 1.0,
-})
-```
-
-> [!WARNING]
-> The command is `hyprctl output create headless` (lowercase "headless"). Do **NOT** write `hyprctl output create HEADLESS-1` — that is a different, incorrect command that will silently fail.
-
-> [!WARNING]
-> Tools like `nwg-displays` can overwrite your monitor config and set `HEADLESS-1` to `disabled = true`. If Moonlight suddenly stops connecting after using display management tools, check your monitors config first.
-
-### KDE Plasma (Wayland)
-
-KDE Plasma on Wayland does not have a working `kscreen-doctor output.add` command, but offers two reliable methods:
+KDE Plasma does not support the old `kscreen-doctor output.add` command. Choose one of two methods:
 
 #### Method 1: Headless HDMI/DP Dummy Plug (Recommended / 100% GUI)
-A physical dummy plug (~$5–$10 on Amazon) is the most foolproof approach for KDE:
-1. Plug it into an empty port on your GPU (e.g. HDMI or DisplayPort).
-2. Open **System Settings → Display and Monitor**.
-3. Set your desired resolution (e.g., 2560×1440 @ 120Hz), scaling, and position entirely through the GUI.
+A hardware dummy plug (~$5–$10 on Amazon) tricks your GPU into recognizing a real physical monitor:
+1. Plug the dummy plug into an open GPU port (e.g. HDMI or DisplayPort).
+2. Open **System Settings → Display and Monitor** in KDE.
+3. Configure your desired resolution (e.g., 2560×1440 @ 120Hz), scaling, and position entirely via the GUI.
+4. With a dummy plug, Sunshine's default **KMS** hardware capture works automatically without extra compositor adjustments.
 
-#### Method 2: Software Virtual Monitor via `krfb-virtualmonitor`
-KDE includes a native Wayland virtual output utility in the `krfb` package:
+#### Method 2: Software Virtual Output via `krfb-virtualmonitor`
+If you do not have a physical dummy plug, use KDE's built-in virtual monitor utility:
 ```bash
-# If not already installed:
-sudo dnf install -y krfb      # Fedora
-sudo pacman -S krfb           # Arch
+# Ensure krfb is installed (default on Fedora KDE):
+sudo dnf install -y krfb
 
-# Launch the virtual monitor:
+# Test spawning the virtual monitor:
 krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"
 ```
 
-**GUI Autostart configuration:**
+**Add to KDE Autostart via GUI:**
 1. Open **System Settings → Autostart**.
-2. Click **Add...** → **Add Application** or **Add Command**.
-3. Enter `krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"`.
-4. Once spawned, the screen appears in **System Settings → Display and Monitor**, where you can manage its layout and scaling.
+2. Click **Add...** → **Add Command** (or Add Application).
+3. Set Command to: `krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"`
+4. Save. When KDE boots, KWin will automatically create this virtual display.
 
-### GNOME (Wayland)
-
-GNOME supports headless outputs through Mutter:
-
-```bash
-# Create a virtual monitor
-gnome-randr --output VIRTUAL1 --mode 2560x1440
-```
-
-Or use `mutter`'s `--virtual-monitor` flag. Again, a dummy plug is the simplest approach for GNOME.
-
-### X11 (Any Desktop)
-
-On X11, virtual monitors are straightforward:
-```bash
-# Add a virtual display
-xrandr --addmode VIRTUAL1 2560x1440
-xrandr --output VIRTUAL1 --mode 2560x1440
-```
-
-Or use `xorg.conf` with a dummy driver:
-```bash
-sudo pacman -S xf86-video-dummy   # Arch
-sudo dnf install xorg-x11-drv-dummy  # Fedora
-```
+> [!NOTE]
+> **KWin Output Naming Rule:**
+> KDE Plasma automatically prefixes all virtual outputs with `Virtual-`. 
+> When you launch with `--name "Virtual-1"`, KWin names the actual display **`Virtual-Virtual-1`**. 
+> Run `kscreen-doctor -o` to confirm the exact identifier.
 
 ---
 
-## 5. Configure Sunshine (Display Target & Autostart)
-
-### Target the Virtual Monitor in Sunshine
-
-By default, Sunshine captures the primary physical monitor via KMS (Kernel Mode Setting). To stream your virtual headless screen to Moonlight instead, configure Sunshine's display output target:
+### Step 4: Configure Sunshine to Capture the Virtual Display
 
 > [!WARNING]
-> **Common Trap — Application "Output" Field:**
-> When adding or editing an app in the Sunshine Web UI under **Applications** (e.g. `Headless Display` or `Desktop`), the field labeled **Output** with the folder icon is for **command logging** (saving standard output `stdout` to a file).
-> **Do NOT put your display name in this field.** Leave the Application "Output" field blank. Display capture is configured globally under **Configuration → Audio / Video**, not in individual applications.
+> **Do NOT Put Display Names into Application Settings:**
+> In the Sunshine Web UI under **Applications → Edit** (e.g. `Headless Display` or `Desktop`):
+> - The **"Output"** field is for **command logging** (redirecting `stdout` to a file).
+> - The **"Command"** field is for launching an executable (e.g. `steam`).
+> Leaving a display name like `Virtual-Virtual-1` in either field will cause Sunshine to fail with `Permission denied / Unable to find executable`. **Leave both fields blank for desktop streaming.**
 
-#### Step 1: Check your exact virtual monitor name
-Run:
-```bash
-kscreen-doctor -o
-```
-* **KDE Plasma (`krfb-virtualmonitor`):** KDE automatically prefixes virtual displays with `Virtual-`. If you created it with `--name Virtual-1`, KWin names it **`Virtual-Virtual-1`**. If you created it with `--name 1`, KWin names it **`Virtual-1`**.
-* **Hyprland:** Typically `HEADLESS-1`.
-* **Hardware Dummy Plug:** The GPU port it is plugged into (e.g., `DP-1` or `HDMI-A-1`).
+Display selection is configured globally:
 
-#### Step 2: Configure Sunshine Display & Capture Mode
+#### In the Sunshine Web UI:
+1. Open `https://localhost:47990` in your browser.
+2. In the left sidebar, click **Audio / Video**:
+   * Locate the **`Display Id`** field (below *Adapter Name*, placeholder `DP-0`).
+   * Enter your virtual output name: `Virtual-Virtual-1` (or your dummy plug port, e.g. `DP-1`).
+3. If using `krfb-virtualmonitor`, switch the capture method:
+   * In the left sidebar, click **Advanced** (below *Config Files*).
+   * Find **`Capture`** (default: *Autodetect*).
+   * Change it to **`KWin Screencast`** (required because software virtual displays do not have a hardware DRM connector for KMS).
+4. Click the blue **Save** button at the bottom.
+5. Click **Apply Changes** (top-right banner) to reload Sunshine.
 
-##### Method A: Via Sunshine Web UI (GUI)
-1. Open Sunshine Web UI: `https://localhost:47990`
-2. **Set the Display:** On the left sidebar, click **Audio / Video**. Look for the **`Display Id`** field (below *Adapter Name*, has placeholder `DP-0`). Enter your virtual output name:
-   `Virtual-Virtual-1`
-3. **Set Capture Method (KDE Plasma):** On the left sidebar, click **Advanced** (below *Config Files*). Scroll down to **`Capture`** and change it from *Autodetect* to **`KWin Screencast`** (required because `krfb-virtualmonitor` runs at the compositor level, not KMS).
-4. Click the blue **Save** button.
-5. Click **Apply Changes** (top right) to reload Sunshine.
-
-##### Method B: Via `sunshine.conf` (Direct configuration)
+#### Alternatively, edit `sunshine.conf` directly:
 Edit `~/.config/sunshine/sunshine.conf`:
 ```ini
-# For KDE Plasma using krfb-virtualmonitor:
+# When using krfb-virtualmonitor:
 capture = kwin
 output_name = Virtual-Virtual-1
 
-# For Hyprland or Physical Dummy Plug (uses standard KMS capture):
+# When using a Hardware Dummy Plug:
 # capture = kms
-# output_name = HEADLESS-1
+# output_name = DP-1
 ```
 
 ---
 
-### Start Sunshine Automatically on Boot
+### Step 5: Enable Sunshine Autostart
 
-Sunshine should start automatically after login.
+Ensure Sunshine starts automatically when your desktop logs in:
 
-### As a systemd user service (Recommended)
 ```bash
-# Enable and start
+# Enable the user service
 systemctl --user enable app-dev.lizardbyte.app.Sunshine.service
 systemctl --user start app-dev.lizardbyte.app.Sunshine.service
 ```
 
-If the service file doesn't exist, create one:
-```bash
-mkdir -p ~/.config/systemd/user/
-cat > ~/.config/systemd/user/sunshine.service << 'EOF'
+If the service unit does not exist, create `~/.config/systemd/user/sunshine.service`:
+```ini
 [Unit]
 Description=Sunshine Game Stream Host
 After=graphical-session.target
@@ -274,39 +173,79 @@ RestartSec=5
 
 [Install]
 WantedBy=default.target
-EOF
-
+```
+Reload and enable:
+```bash
 systemctl --user daemon-reload
 systemctl --user enable sunshine.service
 ```
 
-The `ExecStartPre=/bin/sleep 5` gives the desktop environment time to fully initialize the virtual display before Sunshine tries to capture it.
+---
 
-### Via Desktop Autostart
-Alternatively, add Sunshine to your DE's autostart:
+## 3. Track B: Arch / CachyOS + Hyprland (Wayland)
+
+### Step 1: Install Sunshine (Arch)
 ```bash
-mkdir -p ~/.config/autostart/
-cat > ~/.config/autostart/sunshine.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=Sunshine
-Exec=sunshine
-X-GNOME-Autostart-enabled=true
-EOF
+sudo pacman -S sunshine
 ```
-
-> [!IMPORTANT]
-> Sunshine MUST start **after** the virtual headless monitor exists. If it starts before the monitor is created, it will find zero screens and fail to capture anything. The `sleep 5` in the systemd service handles this timing. If using autostart or exec-once in your WM config, make sure the monitor creation command comes first.
 
 ---
 
-## 6. Fix Headless Cursor Lag
+### Step 2: Enable Auto-Login (Hyprland)
 
-**Why:** On headless (virtual) Wayland displays, the GPU tries to use hardware cursor acceleration. Since there is no physical screen to receive the hardware cursor plane, this causes massive pipeline stalls and makes the stream unbearably laggy.
-
-### Hyprland
-Add to your environment variables:
+Sunshine requires an active graphical session. If using SDDM with Hyprland:
+```ini
+# /etc/sddm.conf
+[Autologin]
+User=YOUR_USERNAME
+Session=hyprland
 ```
+
+---
+
+### Step 3: Create Headless Monitor in Hyprland
+
+Hyprland provides native headless output creation via `hyprctl`.
+
+#### Startup configuration:
+Add to `~/.config/hypr/hyprland.conf`:
+```ini
+exec-once = hyprctl output create headless
+```
+Or in Lua config (Hyprland ≥ 0.55):
+```lua
+hl.on("hyprland.start", function()
+    hl.exec_cmd("hyprctl output create headless")
+end)
+```
+
+> [!WARNING]
+> Use lowercase `headless`: `hyprctl output create headless`. 
+> Do **NOT** write `hyprctl output create HEADLESS-1` (that is the assigned name, not the type, and will silently fail).
+
+#### Monitor mode configuration:
+Add to `~/.config/hypr/hyprland.conf`:
+```ini
+monitor=HEADLESS-1,2560x1440@120.0,0x0,1.0
+```
+Or in Lua:
+```lua
+hl.monitor({
+    output = "HEADLESS-1",
+    mode = "2560x1440@120.0",
+    position = "0x0",
+    scale = 1.0,
+})
+```
+
+---
+
+### Step 4: Fix Headless Cursor Lag
+
+On wlroots-based compositors (Hyprland, Sway), the GPU tries to use hardware cursor planes on virtual screens, resulting in severe lag and stutter.
+
+Disable hardware cursors in `~/.config/hypr/hyprland.conf`:
+```ini
 env = WLR_NO_HARDWARE_CURSORS,1
 ```
 Or in Lua:
@@ -314,135 +253,81 @@ Or in Lua:
 hl.env("WLR_NO_HARDWARE_CURSORS", "1")
 ```
 
-### Sway
-```
-seat * xcursor_theme default 24
-# In your sway config or environment:
-# export WLR_NO_HARDWARE_CURSORS=1
+---
+
+### Step 5: Configure Sunshine & Autostart (Hyprland)
+
+In `~/.config/sunshine/sunshine.conf`:
+```ini
+capture = kms
+output_name = HEADLESS-1
 ```
 
-### KDE Plasma / GNOME
-This issue is primarily a wlroots-based compositor problem (Hyprland, Sway). KDE and GNOME handle cursor rendering differently, so you likely won't need this fix. If you do experience cursor lag, try setting `KWIN_FORCE_SW_CURSOR=1` for KDE.
+Start Sunshine in `hyprland.conf` **after** monitor creation:
+```ini
+exec-once = sleep 2 && systemctl --user start app-dev.lizardbyte.app.Sunshine.service
+```
 
 ---
 
-## 7. Wake-on-LAN Setup
+### Step 6: Status Bar Configuration
 
-**Why:** To power on the PC remotely from your laptop without pressing the physical power button.
+If your status bar (Waybar, Noctalia, etc.) disappears over the stream, it is likely pinned to your old physical monitor name (`HDMI-A-1`, `DP-1`).
 
-### Step 1: Enable in BIOS/UEFI
-Restart the PC, enter BIOS, and enable one of these (name varies by motherboard):
-- "Wake on LAN"
-- "Power On By PCI-E"
-- "Power On By Network"
-- "ErP Ready" → must be **DISABLED** (it blocks WoL)
-
-### Step 2: Enable in the OS
-```bash
-# Check current WoL status
-sudo ethtool enp39s0 | grep -i wake-on
-# "Wake-on: g" means enabled, "Wake-on: d" means disabled
-
-# Enable WoL
-sudo ethtool -s enp39s0 wol g
+Update `~/.config/waybar/config`:
+```json
+"output": ["HEADLESS-1"]
 ```
+*(Or remove the `"output"` constraint altogether so it displays on any connected screen).*
 
-To make it permanent, create a systemd service:
-```bash
-sudo cat > /etc/systemd/system/wol.service << 'EOF'
-[Unit]
-Description=Enable Wake-on-LAN
-After=network.target
+---
 
-[Service]
-Type=oneshot
-ExecStart=/usr/sbin/ethtool -s enp39s0 wol g
+## 4. Shared Configuration
 
-[Install]
-WantedBy=multi-user.target
-EOF
+### Wake-on-LAN Setup
+Allow your laptop to turn on the desktop PC remotely over the network.
 
-sudo systemctl enable wol.service
-```
+#### Step 1: Enable in BIOS/UEFI
+- Enable **Wake-on-LAN** or **Power On by PCI-E / Network**.
+- Disable **ErP Ready** / Deep Sleep (ErP cuts power to the NIC when shut down).
 
-Or use NetworkManager (Fedora default):
+#### Step 2: Enable in NetworkManager (Fedora & Arch)
 ```bash
 nmcli connection modify "Wired connection 1" 802-3-ethernet.wake-on-lan magic
 ```
-
-### Step 3: Note Your MAC Address
-You'll need this for Moonlight to send the wake packet:
+Find your MAC address:
 ```bash
 ip link show enp39s0 | grep ether
-# Example output: link/ether 2c:f0:5d:e7:81:eb
 ```
 
-### Step 4: Configure Moonlight
+#### Step 3: Configure Moonlight Client
 In Moonlight on your laptop:
-1. Add the PC manually using its local IP address
-2. Go to the PC's settings in Moonlight
-3. Enter the MAC address for Wake-on-LAN
-4. Now when the PC is off, clicking it in Moonlight will send a magic packet to wake it
+1. Add the desktop PC by IP.
+2. Open PC settings in Moonlight and enter the MAC address.
+3. When the desktop PC is offline, clicking the PC tile in Moonlight will wake it up.
 
 ---
 
-## 8. Moonlight Client Setup
-
-See **[MOONLIGHT-TIPS.md](MOONLIGHT-TIPS.md)** for detailed client configuration.
+### Moonlight Client Setup
+For optimal latency and image quality on your client:
+* **Resolution & FPS:** Match your host virtual display (e.g., 2560×1440 @ 120 FPS).
+* **Bitrate:** 50–100 Mbps on local Gigabit Ethernet.
+* **Video Codec:** HEVC or AV1 (if supported by client hardware).
+* **Keyboard Shortcuts:** Enable **"Capture system keyboard shortcuts"** in Moonlight settings so `Alt+Tab` and `Super` operate on the remote desktop.
 
 ---
 
-## 9. Disable Idle/Suspend While Streaming
+### Prevent Idle / Suspend While Streaming
 
-Your PC may go to sleep while you are streaming if an idle timer fires. You should either:
+To prevent the host PC from sleeping while streaming:
 
-### Option A: Increase or disable idle timers
-For `hypridle`, the idle config is at `~/.config/hypr/hypridle.conf`. The key listeners are:
-- Screen lock timeout
-- DPMS off timeout (turns off virtual display — will freeze stream!)
-- Suspend timeout
-
-Consider disabling DPMS off and suspend entirely for a headless setup, or increase the timeouts significantly.
-
-### Option B: Use Sunshine's built-in idle inhibitor
-Sunshine should inhibit idle automatically while a client is connected. Check `sunshine.conf`:
+#### Option A: Sunshine screensaver inhibitor
+In `~/.config/sunshine/sunshine.conf`:
 ```ini
-# Sunshine should handle this automatically, but if it doesn't:
 idle_inhibit_screensaver = enabled
 ```
 
-### Option C: Systemd inhibit
+#### Option B: Systemd inhibit wrapper
 ```bash
-systemd-inhibit --what=idle --who=sunshine --why="Game streaming" --mode=block sunshine
+systemd-inhibit --what=idle --who=sunshine --why="Streaming" --mode=block sunshine
 ```
-
----
-
-## 10. Desktop-Specific Instructions
-
-### Fedora KDE Plasma (Recommended for ease of setup)
-
-1. **Install Sunshine:** `sudo dnf install sunshine` or Flatpak
-2. **Auto-login:** Edit `/etc/sddm.conf` → `User=YOUR_USER`, `Session=plasma`
-3. **Virtual monitor:** Plug in a dummy HDMI dongle (simplest & 100% GUI), or run `krfb-virtualmonitor --resolution 2560x1440`
-4. **Start Sunshine:** `systemctl --user start app-dev.lizardbyte.app.Sunshine.service`
-5. **WoL:** `nmcli connection modify "Wired connection 1" 802-3-ethernet.wake-on-lan magic`
-6. **Done!**
-
-### Fedora GNOME
-
-1. **Install Sunshine:** Same as above
-2. **Auto-login:** Edit `/etc/gdm/custom.conf`
-3. **Virtual monitor:** Dummy plug or GNOME virtual display
-4. **Start Sunshine:** Systemd user service or autostart desktop entry
-5. **WoL:** Same NetworkManager command
-
-### Hyprland
-
-1. **Install Sunshine:** Via package manager
-2. **Auto-login:** Edit your display manager config (SDDM, GDM, etc.)
-3. **Virtual monitor:** `exec-once = hyprctl output create headless` + monitor config
-4. **Cursor fix:** `env = WLR_NO_HARDWARE_CURSORS,1`
-5. **Start Sunshine:** `exec-once = systemctl --user start app-dev.lizardbyte.app.Sunshine.service` (AFTER the headless output creation)
-6. **Bar/Shell:** Make sure your status bar (waybar, noctalia, etc.) is configured to show on `HEADLESS-1`, not just your physical monitor name
-7. **WoL:** Systemd service or NetworkManager

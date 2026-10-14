@@ -17,8 +17,8 @@ Stream your desktop PC to your laptop over the local network using **Sunshine** 
 ┌─────────────────────┐          LAN (Gigabit)         ┌──────────────────┐
 │   DESKTOP PC        │ ◄───────────────────────────── │   LAPTOP         │
 │                     │                                │                  │
-│  Hyprland (Wayland) │   Sunshine encodes the         │  Moonlight       │
-│  Virtual HEADLESS   │   virtual display and          │  decodes and     │
+│  KDE / Hyprland     │   Sunshine encodes the         │  Moonlight       │
+│  Virtual Headless   │   virtual display and          │  decodes and     │
 │  monitor at         │   streams it over the          │  displays it on  │
 │  2560x1440@120Hz    │   network                      │  your monitor    │
 │                     │                                │                  │
@@ -30,16 +30,16 @@ The PC boots headless (no monitor plugged in), auto-logs in, creates a software 
 
 ## Quick Start
 
-See the full setup guide: **[docs/SETUP.md](docs/SETUP.md)**
+See the full setup guide: **[docs/SETUP.md](docs/SETUP.md)** (with separate tracks for **Fedora KDE Plasma** and **Arch/CachyOS Hyprland**).
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [docs/SETUP.md](docs/SETUP.md) | Complete step-by-step setup guide (distro-agnostic) |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems and solutions we encountered |
+| [docs/SETUP.md](docs/SETUP.md) | Step-by-step setup guide with dedicated tracks for Fedora KDE & Arch Hyprland |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Real-world errors, causes, and solutions encountered during setup |
 | [docs/MOONLIGHT-TIPS.md](docs/MOONLIGHT-TIPS.md) | Moonlight client settings for the best experience |
-| [configs/](configs/) | Reference config files from the working CachyOS/Hyprland setup |
+| [configs/](configs/) | Reference config files from working Hyprland and SDDM setups |
 
 ## Workflow
 

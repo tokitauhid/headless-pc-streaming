@@ -1,266 +1,277 @@
 # Troubleshooting Guide
 
-Every problem documented here was actually encountered during the setup process. These are real issues with real solutions.
+Every problem documented here was encountered during real-world testing and setup. These solutions cover both **Fedora KDE Plasma (Wayland)** and **Arch/CachyOS (Hyprland)** environments.
 
 ---
 
-## 🔴 Moonlight Can't Find/Connect to PC
+## Table of Contents
 
-### Symptom
-Moonlight on the laptop doesn't see the PC, or shows it as offline.
+- [🔴 Moonlight Cannot Find or Connect to Host PC](#-moonlight-cannot-find-or-connect-to-host-pc)
+  - [1. PC Stuck at Login Screen (Common after Reboot or Headless Boot)](#1-pc-stuck-at-login-screen-common-after-reboot-or-headless-boot)
+  - [2. "Unable to find executable [...] Permission denied" Error](#2-unable-to-find-executable--permission-denied-error)
+  - [3. Sunshine Service Not Running](#3-sunshine-service-not-running)
+  - [4. Firewall Blocking Sunshine Ports](#4-firewall-blocking-sunshine-ports)
+- [🔴 Display & Streaming Issues](#-display--streaming-issues)
+  - [1. Moonlight Streams Physical Monitor Instead of Virtual Display](#1-moonlight-streams-physical-monitor-instead-of-virtual-display)
+  - [2. KMS Capture Fails with "Unknown Monitor connector type [Virtual-Virtual]"](#2-kms-capture-fails-with-unknown-monitor-connector-type-virtual-virtual)
+  - [3. Display Name Mistakenly Placed in Application "Output" Field](#3-display-name-mistakenly-placed-in-application-output-field)
+  - [4. `kscreen-doctor output.add` Command Does Not Work (KDE Plasma)](#4-kscreen-doctor-outputadd-command-does-not-work-kde-plasma)
+  - [5. Stream Connected but Frozen / Single Static Frame](#5-stream-connected-but-frozen--single-static-frame)
+  - [6. `hyprctl output create HEADLESS-1` Silently Fails (Hyprland)](#6-hyprctl-output-create-headless-1-silently-fails-hyprland)
+  - [7. Status Bar / Waybar / Noctalia Missing](#7-status-bar--waybar--noctalia-missing)
+- [🔴 Performance & Input Issues](#-performance--input-issues)
+  - [1. Extreme Mouse / Display Lag on Headless Display (Hyprland / wlroots)](#1-extreme-mouse--display-lag-on-headless-display-hyprland--wlroots)
+  - [2. Right-Click Drag Not Working in Fullscreen Games](#2-right-click-drag-not-working-in-fullscreen-games)
+  - [3. Keyboard Shortcuts Intercepted by Laptop](#3-keyboard-shortcuts-intercepted-by-laptop)
+  - [4. Stream Disconnects or Host Suspends While Playing](#4-stream-disconnects-or-host-suspends-while-playing)
+  - [5. Harmless AV1 Encoder Error in Sunshine Log](#5-harmless-av1-encoder-error-in-sunshine-log)
 
-### Causes & Fixes
+---
 
-**1. Sunshine isn't running**
+## 🔴 Moonlight Cannot Find or Connect to Host PC
+
+### 1. PC Stuck at Login Screen (Common after Reboot or Headless Boot)
+
+#### Symptom
+You can SSH into your host PC from your laptop, but Moonlight says the PC is offline or fails to connect. In `~/.config/sunshine/sunshine.log`, you see:
+```text
+Fatal: Unable to find display or encoder during startup.
+Fatal: Please ensure your manually chosen GPU and monitor are connected and powered on.
+```
+
+#### Cause
+Sunshine runs as a **systemd user service** (`sunshine.service`), which relies on an active graphical desktop session. Without auto-login enabled, the PC boots into the SDDM/GDM greeter (`plasmalogin`). KWin and the Wayland compositor do not start until a user logs in, leaving Sunshine with zero displays to capture.
+
+#### Fix
+Enable auto-login so the graphical desktop launches on boot without keyboard interaction:
+
+**For SDDM (KDE Plasma / Hyprland):**
 ```bash
-# Check if Sunshine is running
+sudo mkdir -p /etc/sddm.conf.d
+sudo bash -c 'cat > /etc/sddm.conf.d/autologin.conf << EOF
+[Autologin]
+User=$(whoami)
+Session=plasma
+EOF'
+```
+*(If using Hyprland, replace `Session=plasma` with `Session=hyprland`)*.
+
+---
+
+### 2. "Unable to find executable [...] Permission denied" Error
+
+#### Symptom
+Moonlight connects briefly and immediately drops. In `sunshine.log`, you see:
+```text
+Error: Unable to find executable [Virtual-Virtual-1]. Is it in your PATH?
+Info: Executing: [Virtual-Virtual-1] in [""]
+Warning: Couldn't run [Virtual-Virtual-1]: System: Permission denied
+```
+
+#### Cause
+In the Sunshine Web UI under **Applications → Edit** (e.g. `Headless Display`), the virtual monitor name (`Virtual-Virtual-1`) was entered into the **Command** field (`cmd`). Sunshine attempts to execute this as a binary on your computer, cannot find it, and aborts the entire stream.
+
+#### Fix
+1. Open Sunshine Web UI: `https://localhost:47990` → **Applications**.
+2. Click **Edit** on your app.
+3. **Completely clear the Command field** (leave it empty).
+4. Save. When Command is blank, Sunshine streams the raw desktop.
+
+---
+
+### 3. Sunshine Service Not Running
+
+#### Symptom
+Moonlight shows the host PC with a lock or offline icon.
+
+#### Fix
+```bash
+# Check service status
 systemctl --user status app-dev.lizardbyte.app.Sunshine.service
 
-# If it's not running, start it
-systemctl --user start app-dev.lizardbyte.app.Sunshine.service
-```
-
-**2. Stuck at login screen (most common after reboot)**
-Sunshine is a **user service** — it only starts after you log in. If auto-login isn't configured, the PC sits at the login screen forever.
-
-Fix: [Enable auto-login](SETUP.md#3-enable-auto-login)
-
-**3. No virtual display exists**
-Sunshine found zero screens to capture, so it's running but can't stream.
-
-Check the Sunshine log:
-```bash
-tail -n 30 ~/.config/sunshine/sunshine.log
-```
-If you see:
-```
-[wlgrab] -------- Start of Wayland monitor list --------
-[wlgrab] --------- End of Wayland monitor list ---------
-```
-That means there are zero monitors. The virtual headless display was never created.
-
-Fix: [Create the virtual headless monitor](SETUP.md#4-create-the-virtual-headless-monitor)
-
-**4. Display management tool wiped your monitor config**
-Tools like `nwg-displays` can overwrite your monitor config and set `HEADLESS-1` to `disabled = true`, killing your headless setup.
-
-Check your monitor config for lines like:
-```
-monitor=HEADLESS-1,disable
-```
-or in Lua:
-```lua
-hl.monitor({ output = "HEADLESS-1", disabled = true })
-```
-
-Fix: Remove the `disable`/`disabled` directive and restore the proper resolution config.
-
----
-
-## 🔴 Moonlight Streams Physical Monitor Instead of Virtual Display
-
-### Symptom
-When you connect from your laptop, Moonlight connects to your physical monitor instead of the virtual headless monitor.
-
-### Causes & Fixes
-
-**1. Display name entered into the Application "Output" field**
-In Sunshine's Web UI under **Applications → Edit**, the field labeled **Output** with the folder icon is for saving command console logs (`stdout`). It does not choose the monitor.
-* **Fix:** In your Application settings (e.g. `Headless Display`), erase anything from the **Output** field and leave it blank. Configure display selection globally under **Configuration → Audio / Video → Output Name**.
-
-**2. Sunshine KMS capture rejected the software virtual display (KDE Plasma Wayland)**
-If using KDE's `krfb-virtualmonitor`, the display exists in the KWin compositor, not as a physical DRM connector on your GPU. Sunshine's default `kms` capture cannot capture it and falls back to your physical monitor (logging `Error: Unknown Monitor connector type [Virtual-Virtual]`).
-* **Fix:** In Sunshine Web UI (**Configuration → Audio / Video**) or `~/.config/sunshine/sunshine.conf`, set:
-  ```ini
-  capture = kwin
-  output_name = Virtual-Virtual-1
-  ```
-  *(Restart Sunshine afterward for changes to take effect).*
-
-**3. KWin output name prefix mismatch**
-KDE Plasma automatically prefixes virtual outputs with `Virtual-`. If you started `krfb-virtualmonitor --name Virtual-1`, KWin names it `Virtual-Virtual-1`.
-* **Fix:** Run `kscreen-doctor -o` to verify the exact output name and match it in Sunshine's `output_name`.
-
----
-
-## 🔴 Stream is Connected but Frozen (Static Image)
-
-### Symptom
-Moonlight connects successfully but shows a single frozen frame that never updates.
-
-### Causes & Fixes
-
-**1. Multiple headless monitors confusing Sunshine**
-If you accidentally created more than one headless output (HEADLESS-1, HEADLESS-2, etc.), Sunshine doesn't know which one to capture and the log will show:
-```
-[wlgrab] Selected monitor [] for streaming
-```
-Note the empty `[]` — it selected nothing.
-
-Fix: Remove extra headless monitors and restart Sunshine:
-```bash
-# Hyprland
-hyprctl output remove HEADLESS-2
+# Start or restart
 systemctl --user restart app-dev.lizardbyte.app.Sunshine.service
 ```
 
-**2. Monitor was hot-unplugged while streaming**
-If you yanked the HDMI cable while Sunshine was actively capturing that physical display, the display ceases to exist and Sunshine freezes trying to capture a dead output.
+---
 
-Fix: This is exactly why we use a permanent headless virtual display. Never unplug a monitor that Sunshine is actively streaming. Reboot the PC to recover.
+### 4. Firewall Blocking Sunshine Ports
+
+#### Symptom
+Sunshine is running and auto-logged in, but Moonlight cannot discover the PC.
+
+#### Fix (Fedora / firewalld):
+Open Sunshine's required ports:
+```bash
+sudo firewall-cmd --permanent --add-port={47984,47989,47990,48010}/tcp
+sudo firewall-cmd --permanent --add-port={47998,47999,48000,48002,48010}/udp
+sudo firewall-cmd --reload
+```
 
 ---
 
-## 🔴 Unbearable Lag / Very Slow Stream
+## 🔴 Display & Streaming Issues
 
-### Symptom
-The stream is technically working but has extreme input lag or visual lag, even on a gigabit LAN.
+### 1. Moonlight Streams Physical Monitor Instead of Virtual Display
 
-### Cause
-On headless (virtual) Wayland displays using wlroots-based compositors (Hyprland, Sway), the GPU attempts hardware cursor acceleration. Since there's no physical screen, this causes massive pipeline stalls.
+#### Symptom
+When connecting from Moonlight, you see your physical desktop monitor rather than the virtual headless output.
 
-### Fix
-Disable hardware cursors:
+#### Causes & Fixes
+* **Cause A: Display ID missing in Sunshine config.**
+  * *Fix:* In Sunshine Web UI (**Configuration → Audio / Video**), set **Display Id** to your virtual output identifier (e.g. `Virtual-Virtual-1` or `HEADLESS-1`).
+* **Cause B: KDE KWin prefixing mismatch.**
+  * *Fix:* If you spawned `krfb-virtualmonitor` using `--name Virtual-1`, KDE prefixes it with `Virtual-`, making the true name **`Virtual-Virtual-1`**. Verify with `kscreen-doctor -o` and match it in Sunshine.
 
-**Hyprland:**
+---
+
+### 2. KMS Capture Fails with "Unknown Monitor connector type [Virtual-Virtual]"
+
+#### Symptom
+In `~/.config/sunshine/sunshine.log`:
+```text
+Error: Unknown Monitor connector type [Virtual-Virtual]: Please report this to the GitHub issue tracker
+Info: Monitor 0 is HDMI-A-1: HKC OVERSEAS LIMITED E2721H
+Info: Screencasting with KMS
+Info: Mapped 'HDMI-A-1' to kmsgrab monitor index 0
 ```
+Sunshine ignores the virtual display and grabs the physical HDMI port.
+
+#### Cause
+Sunshine's default capture backend is **KMS**, which directly interrogates hardware GPU DRM connectors (`/dev/dri/card*`). Software virtual monitors created by `krfb-virtualmonitor` exist inside KWin's compositor and have no physical DRM connector.
+
+#### Fix
+Switch Sunshine to compositor-level capture:
+1. In Sunshine Web UI, go to **Configuration → Advanced** (left sidebar).
+2. Set **Capture** from *Autodetect* to **`KWin Screencast`** (`capture = kwin`).
+3. Save and apply changes.
+
+*(Note: If using a **Hardware Dummy Plug**, this error does not occur because the dummy plug creates a genuine hardware KMS connector on the GPU).*
+
+---
+
+### 3. Display Name Mistakenly Placed in Application "Output" Field
+
+#### Symptom
+You typed `Virtual-1` into the Application config, but Sunshine still streams the physical monitor.
+
+#### Cause
+In Sunshine's **Applications → Edit** interface, the **"Output"** field with the folder icon is for saving command console logs (`stdout` redirection to a file), **NOT** for selecting video displays.
+
+#### Fix
+Erase the entry from the Application **Output** field and leave it blank. Set the display globally under **Configuration → Audio / Video → Display Id**.
+
+---
+
+### 4. `kscreen-doctor output.add` Command Does Not Work (KDE Plasma)
+
+#### Symptom
+Running `kscreen-doctor output.add virtual/...` fails or prints command syntax help.
+
+#### Cause
+KDE Plasma's `kscreen-doctor` tool manages existing outputs; it does not provide an `output.add` command on Wayland.
+
+#### Fix
+* Use a physical HDMI/DisplayPort dummy plug (configured via **System Settings → Display and Monitor**).
+* OR use KDE's virtual monitor binary:
+  ```bash
+  krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"
+  ```
+
+---
+
+### 5. Stream Connected but Frozen / Single Static Frame
+
+#### Causes & Fixes
+1. **Multiple virtual outputs active:** If multiple headless displays were created (`HEADLESS-1` and `HEADLESS-2`), Sunshine may get confused and select nothing (`[wlgrab] Selected monitor []`).
+   * *Fix:* Remove redundant outputs (`hyprctl output remove HEADLESS-2` or `killall krfb-virtualmonitor`) and restart Sunshine.
+2. **Physical cable unplugged during an active stream:** If a physical monitor that was being actively streamed is unplugged, the capture pipeline breaks.
+   * *Fix:* Use a persistent virtual headless output so physical cable state does not affect streaming.
+
+---
+
+### 6. `hyprctl output create HEADLESS-1` Silently Fails (Hyprland)
+
+#### Symptom
+Hyprland never creates the headless monitor.
+
+#### Cause
+The first parameter to `hyprctl output create` is the **backend type** (`headless`), not the output name.
+
+#### Fix
+```bash
+hyprctl output create headless      # ✅ Correct (lowercase)
+# Do NOT run: hyprctl output create HEADLESS-1  ❌
+```
+
+---
+
+### 7. Status Bar / Waybar / Noctalia Missing
+
+#### Symptom
+The desktop streams properly, but your bar is missing.
+
+#### Fix
+Waybar or shell configurations often pin outputs to physical connector names (`HDMI-A-1`). Edit `~/.config/waybar/config` and add `"HEADLESS-1"` (or `"Virtual-Virtual-1"`), or remove the `"output"` filter to display on all monitors.
+
+---
+
+## 🔴 Performance & Input Issues
+
+### 1. Extreme Mouse / Display Lag on Headless Display (Hyprland / wlroots)
+
+#### Symptom
+Input lag and visual stutter are severe despite low ping over Gigabit Ethernet.
+
+#### Cause
+On wlroots compositors, the GPU attempts hardware cursor acceleration on headless outputs, causing pipeline lockups.
+
+#### Fix
+Disable hardware cursors in `~/.config/hypr/hyprland.conf`:
+```ini
 env = WLR_NO_HARDWARE_CURSORS,1
 ```
-Or in Lua:
-```lua
-hl.env("WLR_NO_HARDWARE_CURSORS", "1")
-```
-
-**Sway / Other wlroots:**
-```bash
-export WLR_NO_HARDWARE_CURSORS=1
-```
-
-> This requires a full session restart (reboot or re-login) to take effect.
 
 ---
 
-## 🔴 Top Bar / Status Bar Not Visible
+### 2. Right-Click Drag Not Working in Fullscreen Games
 
-### Symptom
-Your desktop streams fine but the status bar (waybar, noctalia-shell, etc.) is missing.
+#### Symptom
+Camera dragging with right-click stops responding after the first click in games (e.g. RTS or builder games).
 
-### Cause
-The bar is configured to only show on your old physical monitor name (e.g., `HDMI-A-1`). Since you're now streaming from `HEADLESS-1`, the bar doesn't appear.
-
-### Fix
-Update your bar's configuration to include `HEADLESS-1` in its monitor list.
-
-**Noctalia:** Edit `~/.config/noctalia/settings.json` and update monitor references.
-
-**Waybar:** Edit `~/.config/waybar/config` and set:
-```json
-"output": ["HEADLESS-1"]
-```
-Or remove the `output` field entirely to show on all monitors.
+#### Fix
+1. Press `Ctrl + Alt + Shift + M` in Moonlight to toggle mouse capture mode.
+2. Switch the game from Exclusive Fullscreen to **Windowed** or **Borderless Windowed**.
 
 ---
 
-## 🔴 Keyboard Shortcuts Don't Work While Streaming
+### 3. Keyboard Shortcuts Intercepted by Laptop
 
-### Symptom
-Your desktop keybinds (Super key, Alt-Tab, etc.) don't work when streaming via Moonlight.
-
-### Fix
-By default, Moonlight intercepts system keyboard shortcuts so they control the laptop instead of the remote PC.
-
-**Toggle system shortcuts:** Press `Ctrl + Alt + Shift + Z` while in the stream.
-
-**Permanent fix:** In Moonlight settings, enable **"Capture system keyboard shortcuts"**.
+#### Fix
+* While streaming, press `Ctrl + Alt + Shift + Z` to toggle host shortcut capture.
+* In Moonlight settings on your laptop, permanently enable **"Capture system keyboard shortcuts"**.
 
 ---
 
-## 🔴 Mouse Stuck / Can't Release Mouse from Moonlight
+### 4. Stream Disconnects or Host Suspends While Playing
 
-### Fix
-Press `Ctrl + Alt + Shift + Z` to toggle mouse capture.
-
-If that doesn't work, press `Ctrl + Alt + Shift + Q` to force-quit the stream.
-
----
-
-## 🔴 Right-Click Drag Not Working in Games
-
-### Symptom
-In games like Timberborn, Cities Skyline, AOE where you right-click-drag to move the camera, the first drag works but subsequent drags fail.
-
-### Cause
-Wayland handles mouse pointer locks aggressively in fullscreen mode, which conflicts with how Moonlight sends relative mouse data.
-
-### Fixes (try in order)
-
-**1. Toggle mouse mode in Moonlight:**
-Press `Ctrl + Alt + Shift + M` while in the stream to switch between desktop and game mouse mode.
-
-**2. Switch the game to Windowed mode: (Recommended)**
-Change the game's display setting from Fullscreen to Windowed. This avoids the Wayland pointer lock issue entirely.
-
-**3. Fake borderless fullscreen via window rules (Hyprland):**
-Leave the game in Windowed mode but use Hyprland window rules to strip borders and force it fullscreen:
-```
-windowrulev2 = float, class:^(steam_app_APPID)$
-windowrulev2 = noborder, class:^(steam_app_APPID)$
-windowrulev2 = minsize 2560 1440, class:^(steam_app_APPID)$
-windowrulev2 = maxsize 2560 1440, class:^(steam_app_APPID)$
-windowrulev2 = center, class:^(steam_app_APPID)$
-windowrulev2 = norounding, class:^(steam_app_APPID)$
-```
-Replace `APPID` with the game's Steam App ID. Find the class name with `hyprctl clients`.
+#### Fix
+Prevent systemd and Wayland idle managers from suspending:
+* In `~/.config/sunshine/sunshine.conf`, set:
+  ```ini
+  idle_inhibit_screensaver = enabled
+  ```
+* In `hypridle.conf` (Hyprland), increase or comment out DPMS off and suspend rules.
 
 ---
 
-## 🔴 PC Goes to Sleep / Suspends During Streaming
+### 5. Harmless AV1 Encoder Error in Sunshine Log
 
-### Symptom
-The stream drops because the PC suspended itself due to idle timeout.
-
-### Fix
-Check your idle daemon config. For `hypridle`, look at `~/.config/hypr/hypridle.conf`. Increase or disable:
-- DPMS off timeout (this turns off the virtual display and freezes the stream)
-- Suspend timeout
-
-See [SETUP.md Section 9](SETUP.md#9-disable-idlesuspend-while-streaming) for details.
-
----
-
-## 🔴 `hyprctl output create HEADLESS-1` Silently Fails
-
-### Symptom
-The headless monitor is never created even though the command is in your startup config.
-
-### Cause
-The correct command is:
-```bash
-hyprctl output create headless      # ✅ correct (lowercase)
-```
-
-NOT:
-```bash
-hyprctl output create HEADLESS-1    # ❌ wrong — this is the output NAME, not the type
-```
-
-The first argument is the **backend type** (`headless`), not the monitor name. Hyprland automatically assigns the name `HEADLESS-1`, `HEADLESS-2`, etc.
-
----
-
-## 🔴 AV1 Encoding Error in Sunshine Logs
-
-### Symptom
-Sunshine log shows:
-```
+#### Symptom
+```text
 [av1_vaapi @ ...] No usable encoding profile found.
 Could not open codec [av1_vaapi]: Function not implemented
 ```
 
-### Fix
-This is harmless. The RX 5700 XT does not support AV1 hardware encoding. Sunshine automatically falls back to H.264 or HEVC (which the 5700 XT supports fine). The log even says:
-```
-// Ignore any errors mentioned above, they are not relevant. //
-```
-
-No action needed.
+#### Fix
+Harmless notice on older AMD GPUs (like Radeon RX 5700 XT) that lack hardware AV1 encode blocks. Sunshine automatically falls back to H.264 / HEVC. No action needed.
