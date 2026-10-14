@@ -11,6 +11,7 @@ Every problem documented here was encountered during real-world testing and setu
   - [2. "Unable to find executable [...] Permission denied" Error](#2-unable-to-find-executable--permission-denied-error)
   - [3. Sunshine Service Not Running](#3-sunshine-service-not-running)
   - [4. Firewall Blocking Sunshine Ports](#4-firewall-blocking-sunshine-ports)
+  - [5. AMD GPU Disappears / System Freezes on Headless Boot (Navi 10 / RX 5000/6000 Series)](#5-amd-gpu-disappears--system-freezes-on-headless-boot-navi-10--rx-50006000-series)
 - [🔴 Display & Streaming Issues](#-display--streaming-issues)
   - [1. Moonlight Streams Physical Monitor Instead of Virtual Display](#1-moonlight-streams-physical-monitor-instead-of-virtual-display)
   - [2. KMS Capture Fails with "Unknown Monitor connector type [Virtual-Virtual]"](#2-kms-capture-fails-with-unknown-monitor-connector-type-virtual-virtual)
@@ -19,6 +20,8 @@ Every problem documented here was encountered during real-world testing and setu
   - [5. Stream Connected but Frozen / Single Static Frame](#5-stream-connected-but-frozen--single-static-frame)
   - [6. `hyprctl output create HEADLESS-1` Silently Fails (Hyprland)](#6-hyprctl-output-create-headless-1-silently-fails-hyprland)
   - [7. Status Bar / Waybar / Noctalia Missing](#7-status-bar--waybar--noctalia-missing)
+  - [8. Forced Kernel Connector (`video=...e`) Stuck at 640x480 Resolution](#8-forced-kernel-connector-videoe-stuck-at-640x480-resolution)
+  - [9. Dual Displays Active / Mouse Trapped on Phantom Screen](#9-dual-displays-active--mouse-trapped-on-phantom-screen)
 - [🔴 Performance & Input Issues](#-performance--input-issues)
   - [1. Extreme Mouse / Display Lag on Headless Display (Hyprland / wlroots)](#1-extreme-mouse--display-lag-on-headless-display-hyprland--wlroots)
   - [2. Right-Click Drag Not Working in Fullscreen Games](#2-right-click-drag-not-working-in-fullscreen-games)
@@ -107,6 +110,31 @@ sudo firewall-cmd --permanent --add-port={47984,47989,47990,48010}/tcp
 sudo firewall-cmd --permanent --add-port={47998,47999,48000,48002,48010}/udp
 sudo firewall-cmd --reload
 ```
+
+---
+
+### 5. AMD GPU Disappears / System Freezes on Headless Boot (Navi 10 / RX 5000/6000 Series)
+
+#### Symptom
+When booted without any monitor connected, the host PC may hang during boot, fail to join the local network, or `lspci` shows the AMD graphics card completely missing from the PCI bus. Sunshine reports:
+```text
+Fatal: Unable to find display or encoder during startup.
+Fatal: Please ensure your manually chosen GPU and monitor are connected and powered on.
+```
+In `dmesg` / `journalctl`, you may see PCIe Advanced Error Reporting (AER) events, `amdgpu: ring gfx timeout`, or link training failures.
+
+#### Cause
+When no display is plugged into the GPU's physical HDMI or DisplayPort sockets, the GPU's secondary HDMI/DP audio device (`snd_hda_intel`, PCI class `0x040300`) enters an aggressive `D3hot` power-saving state. On many AMD GPUs (particularly Navi 10 / RX 5700 XT), entering or resuming from D3hot triggers a hardware PCIe link collapse, causing the entire graphics card to drop off the bus.
+
+#### Fix
+Add a udev rule to automatically remove the GPU audio function from the PCI bus at boot time:
+```bash
+sudo bash -c 'cat << "EOF" > /etc/udev/rules.d/00-disable-gpu-audio.rules
+# Completely remove GPU HDMI audio controller from the PCI bus to prevent D3hot crash
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x1002", ATTR{class}=="0x040300", ATTR{remove}="1"
+EOF'
+```
+*(Motherboard audio, USB DACs, and Sunshine's virtual audio sink remain 100% operational).*
 
 ---
 
@@ -213,6 +241,44 @@ The desktop streams properly, but your bar is missing.
 
 #### Fix
 Waybar or shell configurations often pin outputs to physical connector names (`HDMI-A-1`). Edit `~/.config/waybar/config` and add `"HEADLESS-1"` (or `"Virtual-Virtual-1"`), or remove the `"output"` filter to display on all monitors.
+
+---
+
+### 8. Forced Kernel Connector (`video=...e`) Stuck at 640x480 Resolution
+
+#### Symptom
+After adding `video=HDMI-A-1:2560x1440@120e` to kernel parameters, Moonlight successfully connects to the host PC, but the resolution is locked to 640×480 (or 1024×768). Opening **System Settings → Display and Monitor** shows no higher resolution or 120Hz options.
+
+#### Cause
+When a DRM connector is forced active with the `video=` kernel argument, no physical monitor is present to provide EDID metadata. The DRM driver initializes a fallback VESA mode (usually 640×480) and does not automatically expose arbitrary high-resolution modes without explicit modelines.
+
+#### Fix
+Use `kscreen-doctor` to dynamically inject a custom modeline and apply it after KWin boots:
+```bash
+# 1. Inject 2560x1440@120Hz CVT reduced-blanking mode
+kscreen-doctor output.HDMI-A-1.addCustomMode.2560.1440.120000.reduced
+
+# 2. Switch to the newly injected mode
+kscreen-doctor output.HDMI-A-1.mode.2560x1440@120
+```
+To run this automatically on every boot, save this in `~/.local/bin/set-headless-resolution.sh` and create a KDE Autostart `.desktop` file (see [Track A: Step 3 Option 1](SETUP.md#option-1-fully-headless-no-monitor-no-dummy-plug---recommended)).
+
+---
+
+### 9. Dual Displays Active / Mouse Trapped on Phantom Screen
+
+#### Symptom
+When streaming the desktop, the mouse cursor can move off the edge of the visible screen into an invisible black void, or Sunshine captures a black screen or wrong window instead of your desktop.
+
+#### Cause
+Both the forced kernel connector (`HDMI-A-1`) and a software virtual monitor (`Virtual-Virtual-1` from `krfb-virtualmonitor`) are running at the same time. KWin treats them as two side-by-side monitors.
+
+#### Fix
+If you are using the forced kernel connector as your primary headless monitor, disable the software virtual monitor:
+```bash
+kscreen-doctor output.Virtual-Virtual-1.disable
+```
+And remove `krfb-virtualmonitor` from KDE Autostart under **System Settings → Autostart**.
 
 ---
 

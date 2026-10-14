@@ -10,8 +10,11 @@ This guide documents every step needed to turn a desktop PC into a headless stre
 - [2. Track A: Fedora + KDE Plasma (Wayland)](#2-track-a-fedora--kde-plasma-wayland)
   - [Step 1: Install Sunshine](#step-1-install-sunshine-fedora)
   - [Step 2: Enable SDDM Auto-Login (Mandatory for Headless)](#step-2-enable-sddm-auto-login-mandatory-for-headless)
-  - [Step 3: Setup the Virtual Display](#step-3-setup-the-virtual-display-kde)
-  - [Step 4: Configure Sunshine to Capture the Virtual Display](#step-4-configure-sunshine-to-capture-the-virtual-display)
+  - [Step 3: Setup the Display Environment](#step-3-setup-the-display-environment-kde)
+    - [Option 1: Fully Headless (No Monitor, No Dummy Plug)](#option-1-fully-headless-no-monitor-no-dummy-plug---recommended)
+    - [Option 2: Hardware Dummy Plug](#option-2-hardware-dummy-plug-simplest-hardware-option)
+    - [Option 3: Extra / Secondary Virtual Display (krfb-virtualmonitor)](#option-3-extra--secondary-virtual-display-krfb-virtualmonitor)
+  - [Step 4: Configure Sunshine to Capture the Display](#step-4-configure-sunshine-to-capture-the-display)
   - [Step 5: Enable Sunshine Autostart](#step-5-enable-sunshine-autostart)
 - [3. Track B: Arch / CachyOS + Hyprland (Wayland)](#3-track-b-arch--cachyos--hyprland-wayland)
   - [Step 1: Install Sunshine](#step-1-install-sunshine-arch)
@@ -77,34 +80,125 @@ EOF'
 
 ---
 
-### Step 3: Setup the Virtual Display (KDE)
+### Step 3: Setup the Display Environment (KDE)
 
-KDE Plasma does not support the old `kscreen-doctor output.add` command. Choose one of the following methods:
+Unlike Hyprland (which supports creating headless virtual outputs natively via `hyprctl`), **KDE Plasma's KWin compositor requires an active DRM connector on startup**. If KWin boots with no monitor and no dummy plug attached, it cannot initialize its rendering pipeline, and Sunshine fails with:
+`Fatal: Unable to find display or encoder during startup`.
 
-#### Method 1: Forced Kernel DRM Connector (Recommended — Free, 100% Software Headless)
-You can force the Linux kernel to report an empty physical port (e.g. `HDMI-A-1`) as permanently connected using the kernel's `video=...e` parameter:
+Select the option that matches your setup:
+* **[Option 1: Fully Headless (No Monitor, No Dummy Plug)](#option-1-fully-headless-no-monitor-no-dummy-plug---recommended)** — **Recommended** for true headless servers. 100% software solution using a forced kernel DRM connector + custom mode injection.
+* **[Option 2: Hardware Dummy Plug](#option-2-hardware-dummy-plug-simplest-hardware-option)** — Physical HDMI/DP plug (~$5).
+* **[Option 3: Extra / Secondary Virtual Display (krfb-virtualmonitor)](#option-3-extra--secondary-virtual-display-krfb-virtualmonitor)** — For adding a 2nd virtual monitor alongside a physical or forced display.
+
+---
+
+#### Option 1: Fully Headless (No Monitor, No Dummy Plug — Recommended)
+
+This method forces the Linux kernel to treat an empty physical port (e.g. `HDMI-A-1`) as permanently connected, initializes KWin normally at boot, and automatically injects high-resolution modes (e.g. 2560×1440 @ 120Hz) upon login.
+
+##### 1. Prerequisite: Prevent AMD GPU Audio D3hot PCIe Crash (AMD GPUs)
+> [!CRITICAL]
+> **Essential for AMD Radeon GPUs (Navi 10 / RX 5000/6000 series):**
+> When no display is plugged into the GPU, the GPU's HDMI/DP audio controller enters a low-power `D3hot` sleep state. Due to an AMD PCIe power management bug, this collapses the GPU's PCIe link, knocking the entire graphics card off the bus and freezing the system.
+> 
+> To permanently prevent this, create a udev rule to remove the GPU HDMI audio controller from the PCI bus:
+> ```bash
+> sudo bash -c 'cat << "EOF" > /etc/udev/rules.d/00-disable-gpu-audio.rules
+> # Completely remove GPU HDMI audio controller from the PCI bus to prevent D3hot crash
+> ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x1002", ATTR{class}=="0x040300", ATTR{remove}="1"
+> EOF'
+> ```
+> *(Note: This only disables the GPU's HDMI/DP audio output. Your motherboard analog/USB audio and Sunshine virtual audio sink are completely unaffected).*
+
+##### 2. Force the Kernel DRM Connector Active
+Instruct the kernel DRM subsystem to report `HDMI-A-1` as always connected using the `video=...e` kernel parameter:
 ```bash
-# 1. Prevent GPU PCIe link collapse on idle/resume:
-sudo bash -c 'cat << "EOF" > /etc/modprobe.d/snd-hda-intel-fix.conf
-options snd_hda_intel power_save=0
-options snd_hda_intel power_save_controller=N
-EOF'
-
-# 2. Force HDMI-A-1 to stay enabled at 2560x1440 @ 120Hz:
+# Add video kernel parameter across all installed kernels
 sudo grubby --update-kernel=ALL --args="video=HDMI-A-1:2560x1440@120e"
-```
-* **Why this works:** KWin sees `HDMI-A-1` as a real, active DRM output during boot and never crashes.
-* **Sunshine integration:** Uses standard, high-performance **KMS capture** (`capture = kms`, `output_name = HDMI-A-1`) with full hardware VA-API acceleration.
 
-#### Method 2: Headless HDMI/DP Dummy Plug (~$5-10 Hardware)
-A physical dummy plug tricks your GPU into recognizing a physical monitor:
+# Persist in /etc/default/grub (for future kernel updates):
+sudo sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="video=HDMI-A-1:2560x1440@120e /' /etc/default/grub
+```
+* The trailing `e` forces the output state to **enabled**.
+* KWin now detects `HDMI-A-1` during early boot, successfully initializes Wayland, and Sunshine finds a valid display.
+
+##### 3. Inject Custom Resolution on Login (`kscreen-doctor`)
+> [!NOTE]
+> Because no physical monitor is connected to supply an EDID, the DRM driver defaults the forced output to a safe fallback resolution (typically 640×480 or 1024×768). The `2560x1440@120` in the kernel argument only acts as a hint.
+> To unlock full 2560×1440 @ 120Hz, we inject a custom modeline into KWin via an autostart script.
+
+1. Create the autostart script:
+```bash
+mkdir -p ~/.local/bin
+cat << 'EOF' > ~/.local/bin/set-headless-resolution.sh
+#!/bin/bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export WAYLAND_DISPLAY=wayland-0
+
+# Wait for KWin to finish initializing
+sleep 2
+
+# Inject 2560x1440@120Hz custom mode (CVT reduced blanking)
+kscreen-doctor output.HDMI-A-1.addCustomMode.2560.1440.120000.reduced 2>/dev/null || true
+
+# Apply the 2560x1440@120 mode
+kscreen-doctor output.HDMI-A-1.mode.2560x1440@120 2>/dev/null || true
+
+# Disable any leftover software virtual monitor
+kscreen-doctor output.Virtual-Virtual-1.disable 2>/dev/null || true
+EOF
+chmod +x ~/.local/bin/set-headless-resolution.sh
+```
+
+2. Register the script with KDE Autostart:
+```bash
+mkdir -p ~/.config/autostart
+cat << 'EOF' > ~/.config/autostart/set-headless-resolution.desktop
+[Desktop Entry]
+Type=Application
+Name=Set Headless 1440p120 Resolution
+Exec=/home/tokit/.local/bin/set-headless-resolution.sh
+Terminal=false
+X-KDE-autostart-phase=2
+EOF
+```
+*(Replace `/home/tokit` with your actual `$HOME` path if different).*
+
+##### 4. How to Undo / Revert
+If you reconnect a physical monitor or wish to revert these changes:
+```bash
+# 1. Remove kernel argument
+sudo grubby --update-kernel=ALL --remove-args="video=HDMI-A-1:2560x1440@120e"
+sudo sed -i 's/video=HDMI-A-1:2560x1440@120e //' /etc/default/grub
+
+# 2. Remove autostart script
+rm -f ~/.local/bin/set-headless-resolution.sh
+rm -f ~/.config/autostart/set-headless-resolution.desktop
+
+# 3. (Optional) Re-enable GPU HDMI audio if using monitor speakers:
+# sudo rm -f /etc/udev/rules.d/00-disable-gpu-audio.rules
+
+# 4. Reboot
+sudo reboot
+```
+
+---
+
+#### Option 2: Hardware Dummy Plug (~$5-10 Hardware Option)
+A physical HDMI or DisplayPort dummy plug (EDID emulator) tricks your GPU into recognizing a physical monitor:
 1. Plug the dummy plug into an open GPU port (e.g. HDMI or DisplayPort).
 2. Open **System Settings → Display and Monitor** in KDE.
 3. Configure your desired resolution (e.g., 2560×1440 @ 120Hz), scaling, and position entirely via the GUI.
 4. Sunshine's default **KMS** hardware capture works automatically.
 
-#### Method 3: Software Virtual Output via `krfb-virtualmonitor`
-If you do not have a physical dummy plug, use KDE's built-in virtual monitor utility:
+---
+
+#### Option 3: Extra / Secondary Virtual Display (`krfb-virtualmonitor`)
+> [!IMPORTANT]
+> **Use this option when you want an extra/secondary virtual display** alongside your primary monitor or forced connector (e.g. for a dual-monitor streaming layout or dedicated second workspace).
+> **Do NOT use this as the sole display for headless booting on KDE**, because KWin will fail to initialize before this virtual output is created.
+
+If you want an additional virtual screen:
 ```bash
 # Ensure krfb is installed (default on Fedora KDE):
 sudo dnf install -y krfb
@@ -113,7 +207,7 @@ sudo dnf install -y krfb
 krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"
 ```
 
-**Add to KDE Autostart via GUI:**
+**Add to KDE Autostart via GUI or CLI:**
 1. Open **System Settings → Autostart**.
 2. Click **Add...** → **Add Command** (or Add Application).
 3. Set Command to: `krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"`
@@ -127,40 +221,44 @@ krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"
 
 ---
 
-### Step 4: Configure Sunshine to Capture the Virtual Display
+### Step 4: Configure Sunshine to Capture the Display
 
 > [!WARNING]
 > **Do NOT Put Display Names into Application Settings:**
 > In the Sunshine Web UI under **Applications → Edit** (e.g. `Headless Display` or `Desktop`):
 > - The **"Output"** field is for **command logging** (redirecting `stdout` to a file).
 > - The **"Command"** field is for launching an executable (e.g. `steam`).
-> Leaving a display name like `Virtual-Virtual-1` in either field will cause Sunshine to fail with `Permission denied / Unable to find executable`. **Leave both fields blank for desktop streaming.**
+> Leaving a display name like `HDMI-A-1` or `Virtual-Virtual-1` in either field will cause Sunshine to fail with `Permission denied / Unable to find executable`. **Leave both fields blank for desktop streaming.**
 
-Display selection is configured globally:
+Display selection and capture method are configured based on which option you chose in Step 3:
 
-#### In the Sunshine Web UI:
-1. Open `https://localhost:47990` in your browser.
-2. In the left sidebar, click **Audio / Video**:
-   * Locate the **`Display Id`** field (below *Adapter Name*, placeholder `DP-0`).
-   * Enter your virtual output name: `Virtual-Virtual-1` (or your dummy plug port, e.g. `DP-1`).
-3. If using `krfb-virtualmonitor`, switch the capture method:
-   * In the left sidebar, click **Advanced** (below *Config Files*).
-   * Find **`Capture`** (default: *Autodetect*).
-   * Change it to **`KWin Screencast`** (required because software virtual displays do not have a hardware DRM connector for KMS).
-4. Click the blue **Save** button at the bottom.
-5. Click **Apply Changes** (top-right banner) to reload Sunshine.
+#### For Option 1 (Fully Headless) or Option 2 (Dummy Plug):
+These methods provide a real DRM connector, allowing high-performance **KMS hardware capture** with direct VA-API / NVENC hardware encoding:
 
-#### Alternatively, edit `sunshine.conf` directly:
-Edit `~/.config/sunshine/sunshine.conf`:
+**Edit `~/.config/sunshine/sunshine.conf`:**
 ```ini
-# When using krfb-virtualmonitor:
+capture = kms
+output_name = HDMI-A-1    # Or your dummy plug port, e.g. DP-1
+```
+
+Or via Sunshine Web UI (`https://localhost:47990`):
+1. Go to **Audio / Video** → set **Display Id** to `HDMI-A-1` (or your port).
+2. Go to **Advanced** → set **Capture** to `Autodetect` or `KMS`.
+3. Click **Save** and **Apply Changes**.
+
+#### For Option 3 (Extra Virtual Display via `krfb-virtualmonitor`):
+Because software virtual displays exist purely within KWin's compositor space without a hardware DRM plane, Sunshine must capture them via KWin Screencast:
+
+**Edit `~/.config/sunshine/sunshine.conf`:**
+```ini
 capture = kwin
 output_name = Virtual-Virtual-1
-
-# When using a Hardware Dummy Plug:
-# capture = kms
-# output_name = DP-1
 ```
+
+Or via Sunshine Web UI (`https://localhost:47990`):
+1. Go to **Audio / Video** → set **Display Id** to `Virtual-Virtual-1`.
+2. Go to **Advanced** → set **Capture** to `KWin Screencast`.
+3. Click **Save** and **Apply Changes**.
 
 ---
 

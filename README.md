@@ -39,7 +39,7 @@ See the full setup guide: **[docs/SETUP.md](docs/SETUP.md)** (with separate trac
 | [docs/SETUP.md](docs/SETUP.md) | Step-by-step setup guide with dedicated tracks for Fedora KDE & Arch Hyprland |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Real-world errors, causes, and solutions encountered during setup |
 | [docs/MOONLIGHT-TIPS.md](docs/MOONLIGHT-TIPS.md) | Moonlight client settings for the best experience |
-| [configs/](configs/) | Reference config files from working Hyprland and SDDM setups |
+| [configs/](configs/) | Reference config files from working Fedora KDE and Hyprland setups |
 
 ## Workflow
 

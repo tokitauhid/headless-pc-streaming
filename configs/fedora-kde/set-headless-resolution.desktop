@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Set Headless 1440p120 Resolution
+Exec=/bin/bash -c "$HOME/.local/bin/set-headless-resolution.sh"
+Terminal=false
+X-KDE-autostart-phase=2

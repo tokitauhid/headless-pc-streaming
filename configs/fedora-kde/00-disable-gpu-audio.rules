@@ -1,0 +1,3 @@
+# Completely remove GPU HDMI/DP audio controller (PCI class 0x040300) from the PCI bus
+# Prevents GPU from entering D3hot sleep and collapsing the PCIe link when headless
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x1002", ATTR{class}=="0x040300", ATTR{remove}="1"
