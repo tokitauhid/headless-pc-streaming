@@ -227,10 +227,11 @@ kscreen-doctor -o
 
 ##### Method A: Via Sunshine Web UI (GUI)
 1. Open Sunshine Web UI: `https://localhost:47990`
-2. Navigate to **Configuration** (gear icon) → **Audio / Video** tab.
-3. In **Output Name**, enter the exact virtual output name (e.g., `Virtual-Virtual-1` or `HEADLESS-1`).
-4. **For KDE Plasma (`krfb-virtualmonitor`):** Set **Capture Method** to **`kwin`** (not `kms`, because software virtual displays do not exist as physical DRM connectors on the GPU).
-5. Click **Save**, then **Apply Changes** (or restart Sunshine).
+2. **Set the Display:** On the left sidebar, click **Audio / Video**. Look for the **`Display Id`** field (below *Adapter Name*, has placeholder `DP-0`). Enter your virtual output name:
+   `Virtual-Virtual-1`
+3. **Set Capture Method (KDE Plasma):** On the left sidebar, click **Advanced** (below *Config Files*). Scroll down to **`Capture`** and change it from *Autodetect* to **`KWin Screencast`** (required because `krfb-virtualmonitor` runs at the compositor level, not KMS).
+4. Click the blue **Save** button.
+5. Click **Apply Changes** (top right) to reload Sunshine.
 
 ##### Method B: Via `sunshine.conf` (Direct configuration)
 Edit `~/.config/sunshine/sunshine.conf`:
