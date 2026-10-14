@@ -79,16 +79,31 @@ EOF'
 
 ### Step 3: Setup the Virtual Display (KDE)
 
-KDE Plasma does not support the old `kscreen-doctor output.add` command. Choose one of two methods:
+KDE Plasma does not support the old `kscreen-doctor output.add` command. Choose one of the following methods:
 
-#### Method 1: Headless HDMI/DP Dummy Plug (Recommended / 100% GUI)
-A hardware dummy plug (~$5–$10 on Amazon) tricks your GPU into recognizing a real physical monitor:
+#### Method 1: Forced Kernel DRM Connector (Recommended — Free, 100% Software Headless)
+You can force the Linux kernel to report an empty physical port (e.g. `HDMI-A-1`) as permanently connected using the kernel's `video=...e` parameter:
+```bash
+# 1. Prevent GPU PCIe link collapse on idle/resume:
+sudo bash -c 'cat << "EOF" > /etc/modprobe.d/snd-hda-intel-fix.conf
+options snd_hda_intel power_save=0
+options snd_hda_intel power_save_controller=N
+EOF'
+
+# 2. Force HDMI-A-1 to stay enabled at 2560x1440 @ 120Hz:
+sudo grubby --update-kernel=ALL --args="video=HDMI-A-1:2560x1440@120e"
+```
+* **Why this works:** KWin sees `HDMI-A-1` as a real, active DRM output during boot and never crashes.
+* **Sunshine integration:** Uses standard, high-performance **KMS capture** (`capture = kms`, `output_name = HDMI-A-1`) with full hardware VA-API acceleration.
+
+#### Method 2: Headless HDMI/DP Dummy Plug (~$5-10 Hardware)
+A physical dummy plug tricks your GPU into recognizing a physical monitor:
 1. Plug the dummy plug into an open GPU port (e.g. HDMI or DisplayPort).
 2. Open **System Settings → Display and Monitor** in KDE.
 3. Configure your desired resolution (e.g., 2560×1440 @ 120Hz), scaling, and position entirely via the GUI.
-4. With a dummy plug, Sunshine's default **KMS** hardware capture works automatically without extra compositor adjustments.
+4. Sunshine's default **KMS** hardware capture works automatically.
 
-#### Method 2: Software Virtual Output via `krfb-virtualmonitor`
+#### Method 3: Software Virtual Output via `krfb-virtualmonitor`
 If you do not have a physical dummy plug, use KDE's built-in virtual monitor utility:
 ```bash
 # Ensure krfb is installed (default on Fedora KDE):
