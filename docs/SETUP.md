@@ -10,7 +10,7 @@ This guide documents every step needed to turn a desktop PC into a headless stre
 2. [Install Sunshine](#2-install-sunshine)
 3. [Enable Auto-Login](#3-enable-auto-login)
 4. [Create the Virtual Headless Monitor](#4-create-the-virtual-headless-monitor)
-5. [Configure Sunshine to Start on Boot](#5-configure-sunshine-to-start-on-boot)
+5. [Configure Sunshine (Display Target & Autostart)](#5-configure-sunshine-display-target--autostart)
 6. [Fix Headless Cursor Lag](#6-fix-headless-cursor-lag)
 7. [Wake-on-LAN Setup](#7-wake-on-lan-setup)
 8. [Moonlight Client Setup](#8-moonlight-client-setup)
@@ -203,7 +203,50 @@ sudo dnf install xorg-x11-drv-dummy  # Fedora
 
 ---
 
-## 5. Configure Sunshine to Start on Boot
+## 5. Configure Sunshine (Display Target & Autostart)
+
+### Target the Virtual Monitor in Sunshine
+
+By default, Sunshine captures the primary physical monitor via KMS (Kernel Mode Setting). To stream your virtual headless screen to Moonlight instead, configure Sunshine's display output target:
+
+> [!WARNING]
+> **Common Trap — Application "Output" Field:**
+> When adding or editing an app in the Sunshine Web UI under **Applications** (e.g. `Headless Display` or `Desktop`), the field labeled **Output** with the folder icon is for **command logging** (saving standard output `stdout` to a file).
+> **Do NOT put your display name in this field.** Leave the Application "Output" field blank. Display capture is configured globally under **Configuration → Audio / Video**, not in individual applications.
+
+#### Step 1: Check your exact virtual monitor name
+Run:
+```bash
+kscreen-doctor -o
+```
+* **KDE Plasma (`krfb-virtualmonitor`):** KDE automatically prefixes virtual displays with `Virtual-`. If you created it with `--name Virtual-1`, KWin names it **`Virtual-Virtual-1`**. If you created it with `--name 1`, KWin names it **`Virtual-1`**.
+* **Hyprland:** Typically `HEADLESS-1`.
+* **Hardware Dummy Plug:** The GPU port it is plugged into (e.g., `DP-1` or `HDMI-A-1`).
+
+#### Step 2: Configure Sunshine Display & Capture Mode
+
+##### Method A: Via Sunshine Web UI (GUI)
+1. Open Sunshine Web UI: `https://localhost:47990`
+2. Navigate to **Configuration** (gear icon) → **Audio / Video** tab.
+3. In **Output Name**, enter the exact virtual output name (e.g., `Virtual-Virtual-1` or `HEADLESS-1`).
+4. **For KDE Plasma (`krfb-virtualmonitor`):** Set **Capture Method** to **`kwin`** (not `kms`, because software virtual displays do not exist as physical DRM connectors on the GPU).
+5. Click **Save**, then **Apply Changes** (or restart Sunshine).
+
+##### Method B: Via `sunshine.conf` (Direct configuration)
+Edit `~/.config/sunshine/sunshine.conf`:
+```ini
+# For KDE Plasma using krfb-virtualmonitor:
+capture = kwin
+output_name = Virtual-Virtual-1
+
+# For Hyprland or Physical Dummy Plug (uses standard KMS capture):
+# capture = kms
+# output_name = HEADLESS-1
+```
+
+---
+
+### Start Sunshine Automatically on Boot
 
 Sunshine should start automatically after login.
 

@@ -57,6 +57,32 @@ Fix: Remove the `disable`/`disabled` directive and restore the proper resolution
 
 ---
 
+## 🔴 Moonlight Streams Physical Monitor Instead of Virtual Display
+
+### Symptom
+When you connect from your laptop, Moonlight connects to your physical monitor instead of the virtual headless monitor.
+
+### Causes & Fixes
+
+**1. Display name entered into the Application "Output" field**
+In Sunshine's Web UI under **Applications → Edit**, the field labeled **Output** with the folder icon is for saving command console logs (`stdout`). It does not choose the monitor.
+* **Fix:** In your Application settings (e.g. `Headless Display`), erase anything from the **Output** field and leave it blank. Configure display selection globally under **Configuration → Audio / Video → Output Name**.
+
+**2. Sunshine KMS capture rejected the software virtual display (KDE Plasma Wayland)**
+If using KDE's `krfb-virtualmonitor`, the display exists in the KWin compositor, not as a physical DRM connector on your GPU. Sunshine's default `kms` capture cannot capture it and falls back to your physical monitor (logging `Error: Unknown Monitor connector type [Virtual-Virtual]`).
+* **Fix:** In Sunshine Web UI (**Configuration → Audio / Video**) or `~/.config/sunshine/sunshine.conf`, set:
+  ```ini
+  capture = kwin
+  output_name = Virtual-Virtual-1
+  ```
+  *(Restart Sunshine afterward for changes to take effect).*
+
+**3. KWin output name prefix mismatch**
+KDE Plasma automatically prefixes virtual outputs with `Virtual-`. If you started `krfb-virtualmonitor --name Virtual-1`, KWin names it `Virtual-Virtual-1`.
+* **Fix:** Run `kscreen-doctor -o` to verify the exact output name and match it in Sunshine's `output_name`.
+
+---
+
 ## 🔴 Stream is Connected but Frozen (Static Image)
 
 ### Symptom
