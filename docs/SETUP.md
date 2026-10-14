@@ -150,16 +150,30 @@ hl.monitor({
 
 ### KDE Plasma (Wayland)
 
-KDE Plasma on Wayland supports virtual outputs natively via `kscreen`:
+KDE Plasma on Wayland does not have a working `kscreen-doctor output.add` command, but offers two reliable methods:
 
+#### Method 1: Headless HDMI/DP Dummy Plug (Recommended / 100% GUI)
+A physical dummy plug (~$5–$10 on Amazon) is the most foolproof approach for KDE:
+1. Plug it into an empty port on your GPU (e.g. HDMI or DisplayPort).
+2. Open **System Settings → Display and Monitor**.
+3. Set your desired resolution (e.g., 2560×1440 @ 120Hz), scaling, and position entirely through the GUI.
+
+#### Method 2: Software Virtual Monitor via `krfb-virtualmonitor`
+KDE includes a native Wayland virtual output utility in the `krfb` package:
 ```bash
-# Method 1: Use kscreen-doctor to add a virtual output
-kscreen-doctor output.add virtual/2560x1440@120
+# If not already installed:
+sudo dnf install -y krfb      # Fedora
+sudo pacman -S krfb           # Arch
+
+# Launch the virtual monitor:
+krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"
 ```
 
-Alternatively, use a **headless HDMI dummy plug** (~$5-10 on Amazon) which is the most foolproof method for KDE. It tricks the GPU into thinking a real monitor is attached.
-
-If using a dummy plug, just configure its resolution via System Settings → Display and Monitor.
+**GUI Autostart configuration:**
+1. Open **System Settings → Autostart**.
+2. Click **Add...** → **Add Application** or **Add Command**.
+3. Enter `krfb-virtualmonitor --resolution 2560x1440 --name "Virtual-1"`.
+4. Once spawned, the screen appears in **System Settings → Display and Monitor**, where you can manage its layout and scaling.
 
 ### GNOME (Wayland)
 
@@ -366,7 +380,7 @@ systemd-inhibit --what=idle --who=sunshine --why="Game streaming" --mode=block s
 
 1. **Install Sunshine:** `sudo dnf install sunshine` or Flatpak
 2. **Auto-login:** Edit `/etc/sddm.conf` → `User=YOUR_USER`, `Session=plasma`
-3. **Virtual monitor:** Plug in a dummy HDMI dongle (simplest), or use `kscreen-doctor`
+3. **Virtual monitor:** Plug in a dummy HDMI dongle (simplest & 100% GUI), or run `krfb-virtualmonitor --resolution 2560x1440`
 4. **Start Sunshine:** `systemctl --user start app-dev.lizardbyte.app.Sunshine.service`
 5. **WoL:** `nmcli connection modify "Wired connection 1" 802-3-ethernet.wake-on-lan magic`
 6. **Done!**
